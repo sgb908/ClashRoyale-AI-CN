@@ -23,6 +23,18 @@ from kivy.uix.label import Label
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _request_android_permissions():
+    """Android 6+ 需要在运行时申请相机权限。"""
+    try:
+        from android.permissions import request_permissions, Permission
+        request_permissions([Permission.CAMERA,
+                             Permission.WRITE_EXTERNAL_STORAGE,
+                             Permission.READ_EXTERNAL_STORAGE])
+        print('[权限] 已发起运行时权限申请')
+    except Exception as exc:
+        print(f'[权限] 跳过（非 Android 或模块缺失）: {exc}')
+
+
 def _find_asset(name):
     """在多个可能位置查找资源文件。"""
     candidates = [
@@ -190,7 +202,8 @@ class CRDetector:
             color = CARD_COLORS[d['cls'] % len(CARD_COLORS)]
             cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
 
-            text = f"{d['name']} {d['conf'] * 100:.0f}%"
+            # cv2.putText 不支持中文，画 ASCII 编号，中文名在界面下方显示
+            text = f"#{d['cls']} {d['conf'] * 100:.0f}%"
             fs, th = 0.6, 2
             (tw, tht), _ = cv2.getTextSize(
                 text, cv2.FONT_HERSHEY_SIMPLEX, fs, th)
@@ -241,8 +254,8 @@ class CRAILayout(BoxLayout):
 
         # 统计
         self.stats_label = Label(
-            text='', size_hint_y=None, height=24,
-            font_size='11sp', halign='left')
+            text='', size_hint_y=None, height=76,
+            font_size='10sp', halign='left', valign='top')
         self.add_widget(self.stats_label)
 
         # 初始化模型（异步，避免阻塞首帧）
@@ -305,17 +318,29 @@ class CRAILayout(BoxLayout):
     def _open_camera(self):
         """Android 优先用后排摄像头；失败则回退 0。"""
         for idx in (0, 1, 2):
-            cap = cv2.VideoCapture(idx)
-            if cap.isOpened():
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-                return cap, idx
-            cap.release()
+            try:
+                cap = cv2.VideoCapture(idx)
+                if cap.isOpened():
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                    # 少缓冲，降低延迟
+                    try:
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        pass
+                    return cap, idx
+                cap.release()
+            except Exception as exc:
+                print(f'[摄像头] index={idx} 打开异常: {exc}')
         return None, None
 
     # --------------------------------------------------
     def _detection_loop(self):
-        cap, cam_idx = self._open_camera()
+        try:
+            cap, cam_idx = self._open_camera()
+        except Exception as exc:
+            print(f'[摄像头] 初始化失败: {exc}')
+            cap, cam_idx = None, None
         if cap is None:
             Clock.schedule_once(
                 lambda dt: setattr(self.status_label, 'text',
@@ -368,9 +393,12 @@ class CRAILayout(BoxLayout):
     # --------------------------------------------------
     def _apply_ui(self, vis, dets, fps, infer_ms):
         self._show_frame(vis)
-        hot = ', '.join(sorted({d['name'] for d in dets})) or '无'
+        names = sorted({d['name'] for d in dets})
+        hot = '  '.join(names) if names else '无目标'
+        legend = ' '.join(f"#{k}={v}" for k, v in sorted(CN_CARD_NAMES.items()))
         self.stats_label.text = (
-            f'FPS {fps:4.1f}  推理 {infer_ms:4.0f}ms  目标 {len(dets):2d}  [{hot}]')
+            f'FPS {fps:4.1f}  推理 {infer_ms:4.0f}ms  目标 {len(dets):2d}\n'
+            f'{hot}\n{legend}')
 
     # --------------------------------------------------
     def on_stop(self):
@@ -381,6 +409,7 @@ class CRAIApp(App):
     title = '国服CR实时识别'
 
     def build(self):
+        _request_android_permissions()
         self.layout = CRAILayout()
         return self.layout
 
