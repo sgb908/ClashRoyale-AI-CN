@@ -1,0 +1,11 @@
+.buildozer/
+bin/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+building
+/root/.buildozer/
+.last_frame.jpg
+onnx_test.jpg
+测试识别结果.jpg
