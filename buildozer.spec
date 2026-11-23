@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,onnx,jpg,png,spec
 version = 0.1
 # p4a recipe 名是 opencv（不是 opencv-python）
-requirements = python3,kivy,opencv,numpy
+requirements = python3,kivy,opencv,numpy==2.3.0
 android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, CAMERA
 android.api = 33
 android.minapi = 24

@@ -35,6 +35,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install buildozer==1.5.0 cython==0.29.36
 
+      # 关键：p4a 会用具体 CPython 版本（如 3.14.2）去 pip 下载
+      # numpy 的 Android wheel。numpy 长期滞后于 CPython 新版本，
+      # 所以这里显式钉一个 p4a 认识的、有 Android wheel 的 Python。
+      - name: Pin python-for-android 的 python 版本
+        run: |
+          python - <<'PY'
+          import re, pathlib
+          p = pathlib.Path('buildozer.spec')
+          s = p.read_text()
+          s = re.sub(r'(?m)^android\.python\.version\s*=.*$', 'android.python.version = 3.12', s)
+          if 'android.python.version' not in s:
+              s = s.replace('requirements = python3,', 'android.python.version = 3.12\nrequirements = python3,')
+          p.write_text(s)
+          print(s)
+          PY
+
       - name: Cache buildozer global dir
         uses: actions/cache@v4
         with:
@@ -55,7 +71,7 @@ jobs:
             ls -lh bin/
           else
             echo "BUILD FAILED"
-            tail -120 build.log
+            tail -200 build.log
             exit 1
           fi
 
